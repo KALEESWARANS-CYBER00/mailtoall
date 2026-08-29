@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}MailFlow — Stateless Direct Bulk Email Platform{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header class="app-header">
+    <a href="{{ url_for('index') }}" class="brand">
+      <div class="brand-icon">⚡</div>
+      <span>MailFlow</span>
+      <span class="badge-stateless">Stateless Engine</span>
+    </a>
+
+    <nav class="nav-links">
+      <a href="{{ url_for('campaign_page') }}" class="nav-item {% if request.path == '/campaign' or request.path == '/' %}active{% endif %}">
+        🚀 New Campaign
+      </a>
+      <a href="{{ url_for('smtp_page') }}" class="nav-item {% if request.path == '/smtp' %}active{% endif %}">
+        ⚙️ SMTP Settings
+      </a>
+      <a href="{{ url_for('results_page') }}" class="nav-item {% if request.path == '/results' %}active{% endif %}">
+        📊 Recent Job
+      </a>
+      <a href="{{ url_for('help_page') }}" class="nav-item {% if request.path == '/help' %}active{% endif %}">
+        ❓ Help
+      </a>
+    </nav>
+  </header>
+
+  <!-- Main Workspace Container -->
+  <main class="main-container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <p>MailFlow — Pure Stateless Direct Bulk Email Platform. No login required. No permanent server data storage.</p>
+  </footer>
+
+  <div id="toast-container"></div>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

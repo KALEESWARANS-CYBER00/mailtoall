@@ -1,996 +1,278 @@
-import csv
+import os
 import io
-import re
-import ssl
-import smtplib
-import threading
-import uuid
+import csv
+from flask import Flask, render_template, request, jsonify, Response, send_from_directory
+from config import Config
+from services.smtp_service import test_smtp_connection, send_email_message
+from services.csv_service import process_csv_file
+from services.template_service import render_email_content
+from services.campaign_service import start_campaign
+from services.job_service import get_job, set_job_status, update_job
 
-from email.message import EmailMessage
-
-from flask import (
-    Flask,
-    jsonify,
-    render_template,
-    request
-)
-
-
-app = Flask(__name__)
-
-MAX_FILE_SIZE = 5 * 1024 * 1024
-
-app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE
+app = Flask(__name__, static_folder='static', static_url_path='/static')
+app.config.from_object(Config)
 
 
 # =========================================================
-# IN-MEMORY JOBS
+# HTML UI & REACT SPA ROUTES (Stateless Navigation)
 # =========================================================
 
-jobs = {}
-
-jobs_lock = threading.Lock()
-
-
-# =========================================================
-# HOME
-# =========================================================
-
-@app.route("/")
+@app.route('/')
 def index():
+    dist_index = os.path.join(app.root_path, 'frontend', 'dist', 'index.html')
+    if os.path.exists(dist_index):
+        return send_from_directory(os.path.join(app.root_path, 'frontend', 'dist'), 'index.html')
+    return render_template('index.html')
 
-    return render_template(
-        "index.html"
-    )
+@app.route('/assets/<path:path>')
+def serve_assets(path):
+    dist_assets = os.path.join(app.root_path, 'frontend', 'dist', 'assets')
+    if os.path.exists(dist_assets):
+        return send_from_directory(dist_assets, path)
+    return jsonify({"error": "Asset not found"}), 404
 
+@app.route('/app')
+@app.route('/react')
+def react_app():
+    dist_dir = os.path.join(app.root_path, 'frontend', 'dist')
+    return send_from_directory(dist_dir, 'index.html')
 
-# =========================================================
-# EMAIL VALIDATION
-# =========================================================
+@app.route('/smtp')
+def smtp_page():
+    return render_template('smtp.html')
 
-def validate_email(email):
+@app.route('/campaign')
+def campaign_page():
+    return render_template('campaign.html')
 
-    pattern = (
-        r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
-    )
+@app.route('/preview')
+def preview_page():
+    return render_template('preview.html')
 
-    return re.match(
-        pattern,
-        email
-    ) is not None
+@app.route('/results')
+def results_page():
+    job_id = request.args.get('job_id', '')
+    return render_template('results.html', job_id=job_id)
 
-
-# =========================================================
-# TEMPLATE VARIABLES
-# =========================================================
-
-def personalize(text, candidate):
-
-    def replace(match):
-
-        key = match.group(1).strip()
-
-        value = candidate.get(
-            key,
-            ""
-        )
-
-        if value is None:
-            return ""
-
-        return str(value)
-
-    return re.sub(
-        r"{{\s*([^{}]+)\s*}}",
-        replace,
-        text
-    )
+@app.route('/help')
+def help_page():
+    return render_template('help.html')
 
 
 # =========================================================
-# PARSE MULTIPLE EMAILS
+# API ENDPOINTS
 # =========================================================
 
-def parse_recipients(value):
-
-    if not value:
-        return []
-
-    value = value.replace(
-        ";",
-        ","
-    )
-
-    emails = []
-
-    for item in value.split(","):
-
-        email = item.strip()
-
-        if email:
-
-            emails.append(
-                email
-            )
-
-    return emails
-
-
-# =========================================================
-# READ CSV
-# =========================================================
-
-def read_csv(file):
-
-    raw = file.read()
-
-    if len(raw) > MAX_FILE_SIZE:
-
-        raise ValueError(
-            "CSV file is too large. Maximum size is 5 MB."
-        )
-
-    try:
-
-        text = raw.decode(
-            "utf-8-sig"
-        )
-
-    except UnicodeDecodeError:
-
-        raise ValueError(
-            "CSV must be UTF-8 encoded."
-        )
-
-
-    reader = csv.DictReader(
-        io.StringIO(text)
-    )
-
-
-    if not reader.fieldnames:
-
-        raise ValueError(
-            "CSV does not contain headers."
-        )
-
-
-    reader.fieldnames = [
-
-        header.strip()
-
-        for header in reader.fieldnames
-
-        if header
-    ]
-
-
-    if (
-        "email" not in reader.fieldnames
-        and
-        "emails" not in reader.fieldnames
-    ):
-
-        raise ValueError(
-            "CSV must contain an 'email' or 'emails' column."
-        )
-
-
-    candidates = []
-
-
-    for row in reader:
-
-        candidate = {}
-
-        for key, value in row.items():
-
-            if key:
-
-                candidate[
-                    key.strip()
-                ] = (
-                    str(value).strip()
-                    if value is not None
-                    else ""
-                )
-
-
-        email_value = candidate.get(
-            "email",
-            ""
-        )
-
-
-        if not email_value:
-
-            email_value = candidate.get(
-                "emails",
-                ""
-            )
-
-
-        recipients = parse_recipients(
-            email_value
-        )
-
-
-        if not recipients:
-
-            continue
-
-
-        candidate["_recipients"] = (
-            recipients
-        )
-
-
-        candidates.append(
-            candidate
-        )
-
-
-    if not candidates:
-
-        raise ValueError(
-            "No candidates with valid email values were found."
-        )
-
-
-    return candidates
-
-
-# =========================================================
-# SMTP SEND
-# =========================================================
-
-def send_email(
-    smtp_host,
-    smtp_port,
-    username,
-    password,
-    from_email,
-    to_email,
-    subject,
-    body
-):
-
-    message = EmailMessage()
-
-
-    message["From"] = (
-        from_email
-        or username
-    )
-
-    message["To"] = to_email
-
-    message["Subject"] = subject
-
-
-    message.set_content(
-        body
-    )
-
-
-    context = ssl.create_default_context()
-
-
-    with smtplib.SMTP_SSL(
-        smtp_host,
-        smtp_port,
-        context=context
-    ) as server:
-
-        server.login(
-            username,
-            password
-        )
-
-        server.send_message(
-            message
-        )
-
-
-# =========================================================
-# SMTP CONNECTION TEST
-# =========================================================
-
-@app.route(
-    "/api/test-email",
-    methods=["POST"]
-)
-def test_email():
-
-    data = request.get_json(
-        silent=True
-    ) or {}
-
-
-    smtp_host = data.get(
-        "smtp_host",
-        "smtp.gmail.com"
-    ).strip()
-
-
-    smtp_port = int(
-        data.get(
-            "smtp_port",
-            465
-        )
-    )
-
-
-    username = data.get(
-        "username",
-        ""
-    ).strip()
-
-
-    password = data.get(
-        "password",
-        ""
-    )
-
-
-    from_email = data.get(
-        "from_email",
-        ""
-    ).strip()
-
-
-    if not username:
-
+@app.route('/api/smtp/test', methods=['POST'])
+def api_test_smtp():
+    data = request.get_json(silent=True) or {}
+    smtp_host = data.get('smtp_host', '')
+    smtp_port = data.get('smtp_port', 465)
+    username = data.get('username', '')
+    password = data.get('password', '')
+    security = data.get('security', 'SSL')
+
+    if not username or not password:
         return jsonify({
             "success": False,
-            "error":
-                "Email address is required."
+            "error": "SMTP Username and Password are required."
         }), 400
 
+    success, message = test_smtp_connection(smtp_host, smtp_port, username, password, security)
+    if success:
+        return jsonify({"success": True, "message": message})
+    return jsonify({"success": False, "error": message}), 400
 
-    if not password:
 
-        return jsonify({
-            "success": False,
-            "error":
-                "Email password or app password is required."
-        }), 400
+@app.route('/api/csv/preview', methods=['POST'])
+def api_csv_preview():
+    if 'csv_file' not in request.files:
+        return jsonify({"success": False, "error": "Please select a CSV file to upload."}), 400
 
+    uploaded_file = request.files['csv_file']
+    if not uploaded_file or uploaded_file.filename == '':
+        return jsonify({"success": False, "error": "No file selected."}), 400
 
     try:
-
-        context = ssl.create_default_context()
-
-
-        with smtplib.SMTP_SSL(
-            smtp_host,
-            smtp_port,
-            context=context
-        ) as server:
-
-            server.login(
-                username,
-                password
-            )
-
-
-        return jsonify({
-            "success": True,
-            "message":
-                "SMTP connection successful."
-        })
-
-
-    except Exception as exc:
-
-        return jsonify({
-            "success": False,
-            "error":
-                str(exc)
-        }), 400
-
-
-# =========================================================
-# START EMAIL JOB
-# =========================================================
-
-@app.route(
-    "/api/send",
-    methods=["POST"]
-)
-def start_send():
-
-    try:
-
-        uploaded_file = request.files.get(
-            "csv_file"
-        )
-
-
-        if not uploaded_file:
-
-            return jsonify({
-                "error":
-                    "Please upload a CSV file."
-            }), 400
-
-
-        # -------------------------------------------------
-        # SMTP DATA
-        # -------------------------------------------------
-
-        smtp_host = request.form.get(
-            "smtp_host",
-            "smtp.gmail.com"
-        ).strip()
-
-
-        smtp_port = int(
-            request.form.get(
-                "smtp_port",
-                465
-            )
-        )
-
-
-        username = request.form.get(
-            "username",
-            ""
-        ).strip()
-
-
-        password = request.form.get(
-            "password",
-            ""
-        )
-
-
-        from_email = request.form.get(
-            "from_email",
-            ""
-        ).strip()
-
-
-        # -------------------------------------------------
-        # EMAIL
-        # -------------------------------------------------
-
-        subject = request.form.get(
-            "subject",
-            ""
-        ).strip()
-
-
-        body = request.form.get(
-            "body",
-            ""
-        ).strip()
-
-
-        # -------------------------------------------------
-        # VALIDATION
-        # -------------------------------------------------
-
-        if not username:
-
-            return jsonify({
-                "error":
-                    "Sending email is required."
-            }), 400
-
-
-        if not password:
-
-            return jsonify({
-                "error":
-                    "Email password or app password is required."
-            }), 400
-
-
-        if not subject:
-
-            return jsonify({
-                "error":
-                    "Email subject is required."
-            }), 400
-
-
-        if not body:
-
-            return jsonify({
-                "error":
-                    "Email body is required."
-            }), 400
-
-
-        # -------------------------------------------------
-        # READ CSV
-        # -------------------------------------------------
-
-        candidates = read_csv(
-            uploaded_file
-        )
-
-
-        # -------------------------------------------------
-        # CREATE JOB
-        # -------------------------------------------------
-
-        job_id = str(
-            uuid.uuid4()
-        )
-
-
-        jobs[job_id] = {
-
-            "status":
-                "queued",
-
-            "total":
-                0,
-
-            "completed":
-                0,
-
-            "sent":
-                0,
-
-            "failed":
-                0,
-
-            "cancelled":
-                False,
-
-            "results":
-                []
-
-        }
-
-
-        # -------------------------------------------------
-        # START WORKER
-        # -------------------------------------------------
-
-        worker = threading.Thread(
-
-            target=send_job,
-
-            args=(
-
-                job_id,
-
-                candidates,
-
-                smtp_host,
-
-                smtp_port,
-
-                username,
-
-                password,
-
-                from_email,
-
-                subject,
-
-                body
-
-            ),
-
-            daemon=True
-
-        )
-
-
-        worker.start()
-
-
-        return jsonify({
-
-            "success":
-                True,
-
-            "job_id":
-                job_id
-
-        })
-
-
+        results = process_csv_file(uploaded_file)
+        results["success"] = True
+        return jsonify(results)
     except ValueError as exc:
-
-        return jsonify({
-
-            "error":
-                str(exc)
-
-        }), 400
-
-
+        return jsonify({"success": False, "error": str(exc)}), 400
     except Exception as exc:
+        return jsonify({"success": False, "error": f"Failed to process CSV file: {str(exc)}"}), 500
 
-        return jsonify({
 
-            "error":
-                str(exc)
+@app.route('/api/campaigns/preview', methods=['POST'])
+def api_campaign_preview():
+    data = request.get_json(silent=True) or {}
+    template_subject = data.get('template_subject', '')
+    template_body = data.get('template_body', '')
+    recipient_data = data.get('recipient_data', {})
 
-        }), 500
-
-
-# =========================================================
-# EMAIL WORKER
-# =========================================================
-
-def send_job(
-    job_id,
-    candidates,
-    smtp_host,
-    smtp_port,
-    username,
-    password,
-    from_email,
-    subject,
-    body
-):
-
-    # -----------------------------------------------------
-    # BUILD RECIPIENT LIST
-    # -----------------------------------------------------
-
-    recipients = []
-
-
-    for candidate in candidates:
-
-        for email in candidate[
-            "_recipients"
-        ]:
-
-            recipients.append({
-
-                "email":
-                    email,
-
-                "candidate":
-                    candidate
-
-            })
-
-
-    total = len(
-        recipients
-    )
-
-
-    with jobs_lock:
-
-        jobs[job_id][
-            "total"
-        ] = total
-
-        jobs[job_id][
-            "status"
-        ] = "sending"
-
-
-    # -----------------------------------------------------
-    # SEND
-    # -----------------------------------------------------
-
-    for item in recipients:
-
-        with jobs_lock:
-
-            if jobs[job_id][
-                "cancelled"
-            ]:
-
-                jobs[job_id][
-                    "status"
-                ] = "cancelled"
-
-                break
-
-
-        email = item[
-            "email"
-        ]
-
-        candidate = item[
-            "candidate"
-        ]
-
-
-        # -------------------------------------------------
-        # VALIDATE
-        # -------------------------------------------------
-
-        if not validate_email(
-            email
-        ):
-
-            with jobs_lock:
-
-                jobs[job_id][
-                    "failed"
-                ] += 1
-
-                jobs[job_id][
-                    "completed"
-                ] += 1
-
-                jobs[job_id][
-                    "results"
-                ].append({
-
-                    "email":
-                        email,
-
-                    "name":
-                        candidate.get(
-                            "name",
-                            ""
-                        ),
-
-                    "status":
-                        "failed",
-
-                    "message":
-                        "Invalid email address."
-
-                })
-
-            continue
-
-
-        # -------------------------------------------------
-        # PERSONALIZE
-        # -------------------------------------------------
-
-        personalized_subject = (
-            personalize(
-                subject,
-                candidate
-            )
-        )
-
-
-        personalized_body = (
-            personalize(
-                body,
-                candidate
-            )
-        )
-
-
-        # -------------------------------------------------
-        # SEND
-        # -------------------------------------------------
-
-        try:
-
-            send_email(
-
-                smtp_host,
-
-                smtp_port,
-
-                username,
-
-                password,
-
-                from_email,
-
-                email,
-
-                personalized_subject,
-
-                personalized_body
-
-            )
-
-
-            with jobs_lock:
-
-                jobs[job_id][
-                    "sent"
-                ] += 1
-
-                jobs[job_id][
-                    "completed"
-                ] += 1
-
-                jobs[job_id][
-                    "results"
-                ].append({
-
-                    "email":
-                        email,
-
-                    "name":
-                        candidate.get(
-                            "name",
-                            ""
-                        ),
-
-                    "status":
-                        "sent",
-
-                    "message":
-                        "Email sent successfully."
-
-                })
-
-
-        except Exception as exc:
-
-            with jobs_lock:
-
-                jobs[job_id][
-                    "failed"
-                ] += 1
-
-                jobs[job_id][
-                    "completed"
-                ] += 1
-
-                jobs[job_id][
-                    "results"
-                ].append({
-
-                    "email":
-                        email,
-
-                    "name":
-                        candidate.get(
-                            "name",
-                            ""
-                        ),
-
-                    "status":
-                        "failed",
-
-                    "message":
-                        str(exc)
-
-                })
-
-
-    # -----------------------------------------------------
-    # FINISHED
-    # -----------------------------------------------------
-
-    with jobs_lock:
-
-        if jobs[job_id][
-            "status"
-        ] != "cancelled":
-
-            jobs[job_id][
-                "status"
-            ] = "completed"
-
-
-# =========================================================
-# JOB STATUS
-# =========================================================
-
-@app.route(
-    "/api/jobs/<job_id>"
-)
-def job_status(job_id):
-
-    with jobs_lock:
-
-        job = jobs.get(
-            job_id
-        )
-
-
-        if not job:
-
-            return jsonify({
-                "error":
-                    "Job not found."
-            }), 404
-
-
-        total = job[
-            "total"
-        ]
-
-        completed = job[
-            "completed"
-        ]
-
-
-        if total:
-
-            progress = round(
-                (
-                    completed /
-                    total
-                ) * 100
-            )
-
-        else:
-
-            progress = 0
-
-
-        return jsonify({
-
-            "status":
-                job["status"],
-
-            "total":
-                total,
-
-            "completed":
-                completed,
-
-            "sent":
-                job["sent"],
-
-            "failed":
-                job["failed"],
-
-            "progress":
-                progress,
-
-            "results":
-                job["results"]
-
-        })
-
-
-# =========================================================
-# CANCEL JOB
-# =========================================================
-
-@app.route(
-    "/api/jobs/<job_id>/cancel",
-    methods=["POST"]
-)
-def cancel_job(job_id):
-
-    with jobs_lock:
-
-        job = jobs.get(
-            job_id
-        )
-
-
-        if not job:
-
-            return jsonify({
-                "error":
-                    "Job not found."
-            }), 404
-
-
-        job[
-            "cancelled"
-        ] = True
-
-
+    rendered_subject, rendered_body = render_email_content(template_subject, template_body, recipient_data)
     return jsonify({
-        "success":
-            True
+        "success": True,
+        "subject": rendered_subject,
+        "body": rendered_body
     })
 
 
-# =========================================================
-# RUN
-# =========================================================
+@app.route('/api/campaigns/test', methods=['POST'])
+def api_campaign_test_send():
+    data = request.get_json(silent=True) or {}
+    smtp_config = data.get('smtp_config', {})
+    template_subject = data.get('template_subject', '')
+    template_body = data.get('template_body', '')
+    test_email = data.get('test_email', '').strip()
+    recipient_data = data.get('recipient_data', {})
+    is_html = data.get('is_html', False)
 
-if __name__ == "__main__":
-    import os
+    if not test_email:
+        return jsonify({"success": False, "error": "Test email address is required."}), 400
 
-    port = int(os.environ.get("PORT", 5000))
+    rendered_subject, rendered_body = render_email_content(template_subject, template_body, recipient_data)
 
-    app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False,
-        threaded=True
-    )
+    try:
+        send_email_message(
+            smtp_config=smtp_config,
+            to_email=test_email,
+            subject=f"[TEST] {rendered_subject}",
+            body=rendered_body,
+            is_html=is_html
+        )
+        return jsonify({
+            "success": True,
+            "message": f"✓ Test email sent successfully to {test_email}"
+        })
+    except Exception as exc:
+        return jsonify({"success": False, "error": f"✕ Test email failed: {str(exc)}"}), 400
+
+
+@app.route('/api/campaigns/send', methods=['POST'])
+def api_campaign_send():
+    data = request.get_json(silent=True) or {}
+    recipients = data.get('recipients', [])
+    smtp_config = data.get('smtp_config', {})
+    subject = data.get('subject', '')
+    body = data.get('body', '')
+    is_html = data.get('is_html', False)
+    speed = data.get('speed', 'normal')
+    custom_rate = data.get('custom_rate', 30)
+
+    try:
+        job_id, job_data = start_campaign(
+            recipients=recipients,
+            smtp_config=smtp_config,
+            subject=subject,
+            body=body,
+            is_html=is_html,
+            speed=speed,
+            custom_rate=custom_rate
+        )
+        return jsonify({
+            "success": True,
+            "job_id": job_id,
+            "job": {
+                "status": job_data["status"],
+                "total": job_data["total"],
+                "progress": 0
+            }
+        })
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"success": False, "error": f"Failed to launch campaign: {str(exc)}"}), 500
+
+
+@app.route('/api/jobs/<job_id>', methods=['GET'])
+def api_get_job_status(job_id):
+    job = get_job(job_id)
+    if not job:
+        return jsonify({"success": False, "error": "Job not found or expired."}), 404
+
+    # Sanitize password from API response
+    sanitized_job = dict(job)
+    if "smtp_config" in sanitized_job:
+        sanitized_job["smtp_config"] = dict(sanitized_job["smtp_config"])
+        sanitized_job["smtp_config"]["password"] = "******"
+
+    return jsonify({
+        "success": True,
+        "job": sanitized_job
+    })
+
+
+@app.route('/api/jobs/<job_id>/pause', methods=['POST'])
+def api_pause_job(job_id):
+    job = get_job(job_id)
+    if not job:
+        return jsonify({"success": False, "error": "Job not found."}), 404
+
+    set_job_status(job_id, "paused")
+    return jsonify({"success": True, "message": "Campaign paused."})
+
+
+@app.route('/api/jobs/<job_id>/resume', methods=['POST'])
+def api_resume_job(job_id):
+    job = get_job(job_id)
+    if not job:
+        return jsonify({"success": False, "error": "Job not found."}), 404
+
+    set_job_status(job_id, "sending")
+    return jsonify({"success": True, "message": "Campaign resumed."})
+
+
+@app.route('/api/jobs/<job_id>/cancel', methods=['POST'])
+def api_cancel_job(job_id):
+    job = get_job(job_id)
+    if not job:
+        return jsonify({"success": False, "error": "Job not found."}), 404
+
+    set_job_status(job_id, "cancelled")
+    return jsonify({"success": True, "message": "Campaign cancelled."})
+
+
+@app.route('/api/jobs/<job_id>/results', methods=['GET'])
+def api_job_results(job_id):
+    job = get_job(job_id)
+    if not job:
+        return jsonify({"success": False, "error": "Job not found."}), 404
+
+    fmt = request.args.get('format', 'json')
+    if fmt == 'csv':
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Email', 'Name', 'Status', 'Message', 'Sent At'])
+        for r in job.get('results', []):
+            writer.writerow([r.get('email'), r.get('name'), r.get('status'), r.get('message'), r.get('sent_at')])
+        
+        output.seek(0)
+        return Response(
+            output.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment;filename=campaign_results_{job_id[:8]}.csv"}
+        )
+
+    return jsonify({
+        "success": True,
+        "results": job.get('results', []),
+        "summary": {
+            "total": job.get('total', 0),
+            "successful": job.get('successful', 0),
+            "failed": job.get('failed', 0),
+            "status": job.get('status')
+        }
+    })
+
+
+if __name__ == '__main__':
+    import os, socket
+    port = int(os.environ.get('PORT', 5000))
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    is_busy = sock.connect_ex(('127.0.0.1', port)) == 0
+    sock.close()
+    if is_busy and 'PORT' not in os.environ:
+        port = 5005
+    print(f"Starting MailFlow Flask Backend Server on port {port}...")
+    app.run(host='0.0.0.0', port=port, debug=False)

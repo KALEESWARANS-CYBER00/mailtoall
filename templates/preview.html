@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+
+{% block title %}Email Template Preview — MailFlow{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 800px; margin: 0 auto;">
+  <h2 class="card-title">👁️ Live Message Preview</h2>
+  <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
+    Test template tag rendering across custom recipient rows before sending.
+  </p>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label class="form-label" for="pv_subject">Subject Template</label>
+      <input type="text" class="form-control" id="pv_subject" value="Hello {{ name }}, update from {{ company }}" oninput="updateLivePreviewPage()">
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label class="form-label" for="pv_body">Body Template</label>
+    <textarea class="form-control" id="pv_body" rows="6" oninput="updateLivePreviewPage()">Hi {{ name }},
+
+We noticed your work as {{ role }} at {{ company }}.
+
+Regards,
+MailFlow</textarea>
+  </div>
+
+  <h3 style="font-size: 1rem; margin-top: 1.5rem; margin-bottom: 0.5rem;">Sample Recipient Mock Data</h3>
+  <div class="form-row">
+    <div class="form-group">
+      <label class="form-label">name</label>
+      <input type="text" class="form-control" id="pv_var_name" value="Alice Smith" oninput="updateLivePreviewPage()">
+    </div>
+    <div class="form-group">
+      <label class="form-label">company</label>
+      <input type="text" class="form-control" id="pv_var_company" value="Acme Corp" oninput="updateLivePreviewPage()">
+    </div>
+    <div class="form-group">
+      <label class="form-label">role</label>
+      <input type="text" class="form-control" id="pv_var_role" value="Lead Developer" oninput="updateLivePreviewPage()">
+    </div>
+  </div>
+
+  <div class="card" style="background: #0f172a; margin-top: 1.5rem;">
+    <div style="border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; margin-bottom: 1rem;">
+      <span style="color: var(--text-muted); font-size: 0.85rem;">Rendered Subject:</span>
+      <h3 style="font-size: 1.1rem; font-weight: 600; margin-top: 0.25rem;" id="pv_out_subject">-</h3>
+    </div>
+    <div>
+      <span style="color: var(--text-muted); font-size: 0.85rem;">Rendered Body:</span>
+      <div id="pv_out_body" style="white-space: pre-wrap; margin-top: 0.5rem; font-size: 0.95rem;"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function updateLivePreviewPage() {
+  const payload = {
+    template_subject: document.getElementById('pv_subject').value,
+    template_body: document.getElementById('pv_body').value,
+    recipient_data: {
+      name: document.getElementById('pv_var_name').value,
+      company: document.getElementById('pv_var_company').value,
+      role: document.getElementById('pv_var_role').value
+    }
+  };
+
+  try {
+    const resp = await fetch('/api/campaigns/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const res = await resp.json();
+    if (res.success) {
+      document.getElementById('pv_out_subject').innerText = res.subject || '(No Subject)';
+      document.getElementById('pv_out_body').innerText = res.body || '(Empty Body)';
+    }
+  } catch (e) {}
+}
+
+document.addEventListener('DOMContentLoaded', updateLivePreviewPage);
+</script>
+{% endblock %}

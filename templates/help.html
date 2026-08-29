@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+
+{% block title %}Help & SMTP Guide — MailFlow{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 900px; margin: 0 auto;">
+  <h2 class="card-title">❓ Help & Documentation</h2>
+
+  <div style="margin-bottom: 2rem;">
+    <h3 style="font-size: 1.2rem; color: var(--accent); margin-bottom: 0.5rem;">🔒 How SMTP App Passwords Work</h3>
+    <p style="color: var(--text-muted); font-size: 0.95rem;">
+      Major email providers require an <strong>App Password</strong> rather than your personal login password for automated email sending.
+    </p>
+
+    <div style="margin-top: 1rem; display: grid; gap: 1rem;">
+      <div class="card" style="background: #0f172a; padding: 1rem 1.5rem;">
+        <h4 style="color: var(--text-main);">Gmail & Google Workspace</h4>
+        <p style="color: var(--text-muted); font-size: 0.9rem;">
+          1. Enable 2-Step Verification on your Google Account.<br>
+          2. Navigate to Google Account > Security > App Passwords.<br>
+          3. Generate a 16-character App Password for "Mail". Use port 465 with SSL.
+        </p>
+      </div>
+
+      <div class="card" style="background: #0f172a; padding: 1rem 1.5rem;">
+        <h4 style="color: var(--text-main);">Microsoft Outlook / Office 365</h4>
+        <p style="color: var(--text-muted); font-size: 0.9rem;">
+          Use SMTP Host <code>smtp.office365.com</code>, Port <code>587</code>, Security <code>STARTTLS</code>. If 2FA is enabled, generate an App Password in your Microsoft Account Security settings.
+        </p>
+      </div>
+
+      <div class="card" style="background: #0f172a; padding: 1rem 1.5rem;">
+        <h4 style="color: var(--text-main);">Yahoo Mail</h4>
+        <p style="color: var(--text-muted); font-size: 0.9rem;">
+          Use SMTP Host <code>smtp.mail.yahoo.com</code>, Port <code>465</code>, Security <code>SSL</code>. Generate an App Password under Yahoo Account Security.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <h3 style="font-size: 1.2rem; color: var(--accent); margin-bottom: 0.5rem;">⚡ Personalization Tag Syntax</h3>
+    <p style="color: var(--text-muted); font-size: 0.95rem;">
+      Use <code>{{ variable_name }}</code> in your Subject or Body. Any CSV column header will automatically be converted to a placeholder tag.
+    </p>
+    <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 0.5rem;">
+      Example: If your CSV has headers <code>first_name</code>, <code>company</code>, <code>role</code>, you can use:
+    </p>
+    <pre style="background: #0f172a; padding: 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); color: var(--accent); margin-top: 0.5rem; font-size: 0.9rem;">
+Hi {{ first_name }},
+
+I noticed your position as {{ role }} at {{ company }}.
+
+Best regards,
+MailFlow</pre>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,347 @@
+/* MailFlow — Warm Earth Tones Design System */
+/* Copper, Cinnamon Wood, Toffee, Olive Wood, Coffee Bean, Stone Brown → Jet Black */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* Warm Earth Tones Palette */
+  --copper:        #b76935;   /* Reddish-brown metallic — primary accent */
+  --cinnamon:      #a56336;   /* Warm spicy brown — secondary accent */
+  --toffee:        #935e38;   /* Rich toffee brown — hover/glow */
+  --olive-wood:    #815839;   /* Woodsy tan-brown — muted accent */
+  --coffee-bean:   #6f523b;   /* Dark espresso — elevated surfaces */
+  --stone-brown:   #5c4d3c;   /* Solid mid-brown — card borders */
+  --charcoal-brn:  #4a473e;   /* Cool dark earth — tertiary bg */
+  --iron-grey:     #38413f;   /* Slate with blue-green — secondary bg */
+  --jet-dark:      #263c41;   /* Deep dark with mystery — primary bg */
+  --jet-black:     #143642;   /* Deepest background — root bg */
+
+  /* Background Depth Scale (dark → light) */
+  --bg-primary:    #111e24;   /* Root canvas — darkest */
+  --bg-secondary:  #1a2a30;   /* Card base */
+  --bg-tertiary:   #243238;   /* Input / elevated element bg */
+  --bg-elevated:   rgba(56, 65, 63, 0.75); /* Frosted glass layer */
+
+  /* Card & Glass */
+  --card-bg:       rgba(26, 42, 48, 0.88);
+  --card-border:   rgba(183, 105, 53, 0.22);
+  --card-border-glow: rgba(183, 105, 53, 0.55);
+
+  /* Accent System — built on Copper/Cinnamon */
+  --accent-primary:   #b76935;
+  --accent-hover:     #c97a45;
+  --accent-gradient:  linear-gradient(135deg, #6f523b 0%, #935e38 40%, #b76935 100%);
+  --accent-gradient-v: linear-gradient(180deg, #b76935 0%, #6f523b 100%);
+
+  /* Glow effects */
+  --copper-glow:   rgba(183, 105, 53, 0.38);
+  --toffee-glow:   rgba(147, 94, 56, 0.28);
+
+  /* Text */
+  --text-primary:   #f2ede7;  /* Warm off-white */
+  --text-secondary: #c5b8a8;  /* Warm sand */
+  --text-muted:     #8a7a6a;  /* Dim amber-grey */
+
+  /* Semantic */
+  --success:  #7a9e7e;        /* Muted forest green */
+  --warning:  #b76935;        /* Copper */
+  --danger:   #a84030;        /* Deep terracotta */
+
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  /* Typography */
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Shadows */
+  --shadow-earth: 0 12px 35px -5px rgba(17, 30, 36, 0.8), 0 0 22px rgba(183, 105, 53, 0.12);
+  --shadow-copper: 0 8px 28px rgba(183, 105, 53, 0.3);
+}
+
+/* Reset */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  line-height: 1.6;
+  /* Layered ambient glow: copper top-left, iron-grey bottom-right */
+  background-image:
+    radial-gradient(ellipse at 12% 18%, rgba(183, 105, 53, 0.14) 0%, transparent 42%),
+    radial-gradient(ellipse at 88% 80%, rgba(56, 65, 63, 0.20) 0%, transparent 48%),
+    radial-gradient(ellipse at 55% 50%, rgba(111, 82, 59, 0.06) 0%, transparent 60%);
+}
+
+/* ─── Glassmorphism Cards ─────────────────────────────── */
+.glass-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-earth);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Subtle top-edge copper shimmer line */
+.glass-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(183, 105, 53, 0.5), transparent);
+  pointer-events: none;
+}
+
+.glass-card:hover {
+  border-color: var(--card-border-glow);
+  box-shadow: 0 18px 44px -10px rgba(17, 30, 36, 0.85), 0 0 28px rgba(183, 105, 53, 0.18);
+}
+
+/* ─── Buttons ─────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  border: none;
+  text-decoration: none;
+  font-family: inherit;
+  letter-spacing: 0.2px;
+}
+
+.btn-primary {
+  background: var(--accent-gradient);
+  color: #f2ede7;
+  box-shadow: 0 4px 20px var(--copper-glow);
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(183, 105, 53, 0.45);
+  filter: brightness(1.1);
+}
+
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--card-border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(183, 105, 53, 0.14);
+  border-color: var(--copper);
+  color: #fff;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, #7a2e20 0%, #a84030 100%);
+  color: #f2ede7;
+  box-shadow: 0 4px 16px rgba(168, 64, 48, 0.35);
+}
+
+.btn-danger:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+}
+
+/* Preset / small pill buttons */
+.btn-preset {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--card-border);
+  color: var(--text-secondary);
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.btn-preset:hover,
+.btn-preset.active {
+  background: rgba(183, 105, 53, 0.2);
+  border-color: var(--copper);
+  color: var(--text-primary);
+}
+
+/* ─── Form Controls ───────────────────────────────────── */
+.input-field {
+  width: 100%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  outline: none;
+}
+
+.input-field:focus {
+  border-color: var(--copper);
+  box-shadow: 0 0 0 3px var(--copper-glow);
+}
+
+.input-field::placeholder {
+  color: var(--text-muted);
+}
+
+select.input-field option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+/* ─── Chips / Tags ────────────────────────────────────── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--card-border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.chip:hover {
+  background: rgba(183, 105, 53, 0.18);
+  border-color: var(--copper);
+  color: var(--text-primary);
+}
+
+/* ─── Badges ──────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+
+.badge-warm {
+  background: rgba(183, 105, 53, 0.18);
+  color: var(--copper);
+  border: 1px solid rgba(183, 105, 53, 0.35);
+}
+
+/* ─── Terminal / Log Console ──────────────────────────── */
+.terminal-console {
+  background: #0c1419;
+  border: 1px solid rgba(183, 105, 53, 0.2);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: #c5b8a8;
+  height: 260px;
+  overflow-y: auto;
+  box-shadow: inset 0 3px 12px rgba(0, 0, 0, 0.7);
+  line-height: 1.7;
+}
+
+.terminal-line {
+  margin-bottom: 4px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.terminal-time {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.terminal-success {
+  color: #7a9e7e;
+  font-weight: 600;
+}
+
+.terminal-error {
+  color: #c0604a;
+  font-weight: 600;
+}
+
+/* ─── Scrollbar ───────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--stone-brown);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--toffee);
+}
+
+/* ─── Keyframe Animations ─────────────────────────────── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 28px var(--copper-glow); }
+  50%       { opacity: 0.9; box-shadow: 0 0 48px rgba(183, 105, 53, 0.55); transform: scale(1.015); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}

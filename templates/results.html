@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+
+{% block title %}Campaign Results & Live Progress — MailFlow{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-title">
+    <span>📊 Campaign Live Progress</span>
+    <span class="badge-stateless" id="job-status-badge">queued</span>
+  </div>
+
+  <div id="no-job-notice" style="display: none; padding: 2rem; text-align: center; color: var(--text-muted);">
+    <p>No active campaign job found. Create a campaign to start sending bulk emails.</p>
+    <a href="{{ url_for('campaign_page') }}" class="btn btn-primary" style="margin-top: 1rem;">🚀 Create Campaign</a>
+  </div>
+
+  <div id="job-progress-container" style="display: none;">
+    <!-- Metric Cards -->
+    <div class="form-row" style="margin-bottom: 1.5rem;">
+      <div class="card" style="padding: 1rem; text-align: center; background: #0f172a;">
+        <div style="color: var(--text-muted); font-size: 0.85rem;">Total Recipients</div>
+        <div style="font-size: 1.6rem; font-weight: 700;" id="j-total">0</div>
+      </div>
+      <div class="card" style="padding: 1rem; text-align: center; background: #0f172a;">
+        <div style="color: var(--text-muted); font-size: 0.85rem;">Processed</div>
+        <div style="font-size: 1.6rem; font-weight: 700;" id="j-processed">0</div>
+      </div>
+      <div class="card" style="padding: 1rem; text-align: center; background: #0f172a;">
+        <div style="color: var(--success); font-size: 0.85rem;">Sent Successfully</div>
+        <div style="font-size: 1.6rem; font-weight: 700; color: var(--success);" id="j-sent">0</div>
+      </div>
+      <div class="card" style="padding: 1rem; text-align: center; background: #0f172a;">
+        <div style="color: var(--danger); font-size: 0.85rem;">Failed</div>
+        <div style="font-size: 1.6rem; font-weight: 700; color: var(--danger);" id="j-failed">0</div>
+      </div>
+    </div>
+
+    <!-- Progress Bar -->
+    <div style="display: flex; justify-content: space-between; font-size: 0.9rem; font-weight: 600; margin-bottom: 0.25rem;">
+      <span>Progress: <span id="j-progress-text">0%</span></span>
+      <span id="j-counter-text">0 / 0</span>
+    </div>
+    <div class="progress-bar-container">
+      <div class="progress-bar-fill" id="j-progress-fill"></div>
+    </div>
+
+    <!-- Controls -->
+    <div style="display: flex; gap: 1rem; margin-top: 1.5rem; flex-wrap: wrap;">
+      <button class="btn btn-warning" id="btnPauseJob">Pause Campaign</button>
+      <button class="btn btn-success" id="btnResumeJob" style="display: none;">Resume Campaign</button>
+      <button class="btn btn-danger" id="btnCancelJob">Cancel Campaign</button>
+      <a class="btn btn-secondary" id="btnExportCsv" href="#" target="_blank">📥 Export Results CSV</a>
+    </div>
+
+    <!-- Live Log Table -->
+    <h3 style="font-size: 1.1rem; margin-top: 2rem; margin-bottom: 0.75rem;">Live Recipient Outcomes</h3>
+    <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Delivery Result</th>
+            <th>Timestamp</th>
+          </tr>
+        </thead>
+        <tbody id="results-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const urlParams = new URLSearchParams(window.location.search);
+const currentJobId = urlParams.get('job_id') || localStorage.getItem('last_job_id');
+
+let pollInterval = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (!currentJobId) {
+    document.getElementById('no-job-notice').style.display = 'block';
+    return;
+  }
+  document.getElementById('job-progress-container').style.display = 'block';
+  document.getElementById('btnExportCsv').href = `/api/jobs/${currentJobId}/results?format=csv`;
+
+  // Start polling
+  fetchJobStatus();
+  pollInterval = setInterval(fetchJobStatus, 1500);
+
+  // Pause button
+  document.getElementById('btnPauseJob').addEventListener('click', async () => {
+    try {
+      const resp = await fetch(`/api/jobs/${currentJobId}/pause`, { method: 'POST' });
+      const res = await resp.json();
+      if (res.success) showToast("Campaign paused", "warning");
+    } catch (e) { showToast("Failed to pause", "danger"); }
+  });
+
+  // Resume button
+  document.getElementById('btnResumeJob').addEventListener('click', async () => {
+    try {
+      const resp = await fetch(`/api/jobs/${currentJobId}/resume`, { method: 'POST' });
+      const res = await resp.json();
+      if (res.success) showToast("Campaign resumed", "success");
+    } catch (e) { showToast("Failed to resume", "danger"); }
+  });
+
+  // Cancel button
+  document.getElementById('btnCancelJob').addEventListener('click', async () => {
+    if (confirm("Are you sure you want to cancel the remaining unsent emails?")) {
+      try {
+        const resp = await fetch(`/api/jobs/${currentJobId}/cancel`, { method: 'POST' });
+        const res = await resp.json();
+        if (res.success) showToast("Campaign cancelled", "danger");
+      } catch (e) { showToast("Failed to cancel", "danger"); }
+    }
+  });
+});
+
+async function fetchJobStatus() {
+  if (!currentJobId) return;
+  try {
+    const resp = await fetch(`/api/jobs/${currentJobId}`);
+    if (!resp.ok) {
+      if (resp.status === 404) {
+        clearInterval(pollInterval);
+        document.getElementById('job-status-badge').innerText = "expired";
+      }
+      return;
+    }
+    const res = await resp.json();
+    if (res.success && res.job) {
+      const j = res.job;
+      document.getElementById('job-status-badge').innerText = j.status;
+      document.getElementById('j-total').innerText = (j.total || 0).toLocaleString();
+      document.getElementById('j-processed').innerText = (j.processed || 0).toLocaleString();
+      document.getElementById('j-sent').innerText = (j.successful || 0).toLocaleString();
+      document.getElementById('j-failed').innerText = (j.failed || 0).toLocaleString();
+
+      const progress = j.progress || 0;
+      document.getElementById('j-progress-text').innerText = `${progress}%`;
+      document.getElementById('j-counter-text').innerText = `${j.processed} / ${j.total}`;
+      document.getElementById('j-progress-fill').style.width = `${progress}%`;
+
+      // Pause/Resume button toggle
+      if (j.status === 'paused') {
+        document.getElementById('btnPauseJob').style.display = 'none';
+        document.getElementById('btnResumeJob').style.display = 'inline-flex';
+      } else {
+        document.getElementById('btnPauseJob').style.display = 'inline-flex';
+        document.getElementById('btnResumeJob').style.display = 'none';
+      }
+
+      // Stop polling when done
+      if (j.status === 'completed' || j.status === 'cancelled' || j.status === 'failed') {
+        clearInterval(pollInterval);
+        document.getElementById('btnPauseJob').style.display = 'none';
+        document.getElementById('btnResumeJob').style.display = 'none';
+      }
+
+      renderResultsTable(j.results || []);
+    }
+  } catch (err) {
+    console.error("Polling error:", err);
+  }
+}
+
+function renderResultsTable(results) {
+  const tbody = document.getElementById('results-table-body');
+  tbody.innerHTML = '';
+
+  results.slice().reverse().forEach(r => {
+    const tr = document.createElement('tr');
+    const statusColor = r.status === 'sent' ? 'var(--success)' : 'var(--danger)';
+    tr.innerHTML = `
+      <td>${r.email || ''}</td>
+      <td>${r.name || ''}</td>
+      <td><span style="color: ${statusColor}; font-weight: 600;">${r.status}</span></td>
+      <td style="font-size: 0.85rem;">${r.message || ''}</td>
+      <td style="font-size: 0.8rem; color: var(--text-muted);">${r.sent_at || ''}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+</script>
+{% endblock %}
