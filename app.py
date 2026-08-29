@@ -17,46 +17,16 @@ app.config.from_object(Config)
 # HTML UI & REACT SPA ROUTES (Stateless Navigation)
 # =========================================================
 
-@app.route('/')
-def index():
-    dist_index = os.path.join(app.root_path, 'frontend', 'dist', 'index.html')
-    if os.path.exists(dist_index):
-        return send_from_directory(os.path.join(app.root_path, 'frontend', 'dist'), 'index.html')
-    return render_template('index.html')
-
-@app.route('/assets/<path:path>')
-def serve_assets(path):
-    dist_assets = os.path.join(app.root_path, 'frontend', 'dist', 'assets')
-    if os.path.exists(dist_assets):
-        return send_from_directory(dist_assets, path)
-    return jsonify({"error": "Asset not found"}), 404
-
-@app.route('/app')
-@app.route('/react')
-def react_app():
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def catch_all(path):
+    if path.startswith('api/'):
+        return jsonify({"error": "API route not found"}), 404
     dist_dir = os.path.join(app.root_path, 'frontend', 'dist')
-    return send_from_directory(dist_dir, 'index.html')
+    if os.path.exists(os.path.join(dist_dir, 'index.html')):
+        return send_from_directory(dist_dir, 'index.html')
+    return jsonify({"error": "Frontend build not found. Please build the React app."}), 404
 
-@app.route('/smtp')
-def smtp_page():
-    return render_template('smtp.html')
-
-@app.route('/campaign')
-def campaign_page():
-    return render_template('campaign.html')
-
-@app.route('/preview')
-def preview_page():
-    return render_template('preview.html')
-
-@app.route('/results')
-def results_page():
-    job_id = request.args.get('job_id', '')
-    return render_template('results.html', job_id=job_id)
-
-@app.route('/help')
-def help_page():
-    return render_template('help.html')
 
 
 # =========================================================
