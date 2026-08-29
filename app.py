@@ -22,10 +22,19 @@ app.config.from_object(Config)
 def catch_all(path):
     if path.startswith('api/'):
         return jsonify({"error": "API route not found"}), 404
+    
     dist_dir = os.path.join(app.root_path, 'frontend', 'dist')
+    file_path = os.path.join(dist_dir, path)
+    
+    # If the file exists on the disk (e.g. assets/index.js, favicon.ico), serve it
+    if path and os.path.exists(file_path) and os.path.isfile(file_path):
+        return send_from_directory(dist_dir, path)
+        
+    # Otherwise fall back to index.html for React SPA client-side routes
     if os.path.exists(os.path.join(dist_dir, 'index.html')):
         return send_from_directory(dist_dir, 'index.html')
     return jsonify({"error": "Frontend build not found. Please build the React app."}), 404
+
 
 
 
