@@ -1,17 +1,27 @@
-# Multi-stage Dockerfile for MailToAll 2.0 Spring Boot Backend
+# Stage 1: Build React Frontend
+FROM node:18-alpine AS frontend-builder
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm install
+COPY frontend/ ./
+RUN npm run build
 
-# Stage 1: Build
-FROM maven:3.9.6-eclipse-temurin-21-alpine AS build
+# Stage 2: Python Runtime
+FROM python:3.11-slim
 WORKDIR /app
-COPY pom.xml .
-RUN mvn dependency:go-offline -B
-COPY src ./src
-RUN mvn package -DskipTests -B
 
-# Stage 2: Runtime
-FROM eclipse-temurin:21-jre-alpine
-WORKDIR /app
-EXPOSE 8080
-COPY --from=build /app/target/mailtoall-saas-2.0.0-SNAPSHOT.jar app.jar
+# Install system dependencies if any, then python requirements
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt gunicorn
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Copy Flask backend files
+COPY . .
+
+# Copy the compiled React assets from stage 1
+COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
+
+# Expose the default container port
+EXPOSE 10000
+
+# Start app using Gunicorn binding to PORT env var (Render default)
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-10000} app:app"]
